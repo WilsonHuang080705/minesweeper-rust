@@ -1,4 +1,4 @@
-use std::{io, time::{Duration, Instant}};
+use std::{io, time::Instant};
 use crossterm::{
     cursor::{Hide, Show},
     event::{self, Event, KeyCode},
@@ -8,10 +8,9 @@ use crossterm::{
 use rand::Rng;
 use tui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, Paragraph},
+    text::Span,
+    widgets::Paragraph,
     Terminal,
 };
 
@@ -63,6 +62,29 @@ impl Game {
         game
     }
 
+    fn calculate_neighbors(&mut self) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if !self.cells[y][x].is_mine {
+                    let mut count = 0;
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            if dy == 0 && dx == 0 { continue; }
+                            let ny = y as i32 + dy;
+                            let nx = x as i32 + dx;
+                            if ny >= 0 && ny < self.height as i32 && nx >= 0 && nx < self.width as i32 {
+                                if self.cells[ny as usize][nx as usize].is_mine {
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                    self.cells[y][x].neighbor_mines = count;
+                }
+            }
+        }
+    }
+    
     fn get_elapsed_time(&self) -> u64 {
         match (self.start_time, self.end_time) {
             (None, _) => 0,
@@ -150,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     terminal.clear()?;
 
     let mut leaderboard = Leaderboard::new();
-    let mut difficulty = 0;
+    let difficulty = 0;
     let mut game = Game::new(difficulties[difficulty].0, difficulties[difficulty].1, difficulties[difficulty].2);
 
     loop {
