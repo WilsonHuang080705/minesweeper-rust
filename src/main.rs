@@ -1,4 +1,4 @@
-use std::{io, time::Instant};
+use std::{io, time::{Duration, Instant}};
 use crossterm::{
     cursor::{Hide, Show},
     event::{self, Event, KeyCode},
@@ -8,9 +8,10 @@ use crossterm::{
 use rand::Rng;
 use tui::{
     backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::Span,
-    widgets::{Block, Borders},
+    text::{Span, Spans},
+    widgets::{Block, Borders, Paragraph},
     Terminal,
 };
 
@@ -62,6 +63,14 @@ impl Game {
         game
     }
 
+    fn get_elapsed_time(&self) -> u64 {
+        match (self.start_time, self.end_time) {
+            (None, _) => 0,
+            (Some(start), None) => start.elapsed().as_secs(),
+            (Some(start), Some(end)) => end.duration_since(start).as_secs(),
+        }
+    }
+
     fn place_mines(&mut self) {
         let mut rng = rand::rng();
         let mut placed = 0;
@@ -71,29 +80,6 @@ impl Game {
             if !self.cells[y][x].is_mine {
                 self.cells[y][x].is_mine = true;
                 placed += 1;
-            }
-        }
-    }
-
-    fn calculate_neighbors(&mut self) {
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if !self.cells[y][x].is_mine {
-                    let mut count = 0;
-                    for dy in -1..=1 {
-                        for dx in -1..=1 {
-                            if dy == 0 && dx == 0 { continue; }
-                            let ny = y as i32 + dy;
-                            let nx = x as i32 + dx;
-                            if ny >= 0 && ny < self.height as i32 && nx >= 0 && nx < self.width as i32 {
-                                if self.cells[ny as usize][nx as usize].is_mine {
-                                    count += 1;
-                                }
-                            }
-                        }
-                    }
-                    self.cells[y][x].neighbor_mines = count;
-                }
             }
         }
     }
@@ -113,30 +99,7 @@ impl Game {
         }
 
         self.cells[y][x].state = CellState::Revealed;
-
-        if self.cells[y][x].neighbor_mines == 0 {
-            for dy in -1..=1 {
-                for dx in -1..=1 {
-                    let ny = y as i32 + dy;
-                    let nx = x as i32 + dx;
-                    if ny >= 0 && ny < self.height as i32 && nx >= 0 && nx < self.width as i32 {
-                        self.reveal(nx as usize, ny as usize);
-                    }
-                }
-            }
-        }
-
         self.check_victory();
-    }
-
-    fn toggle_flag(&mut self, x: usize, y: usize) {
-        if self.cells[y][x].state == CellState::Hidden && self.flags < self.mines {
-            self.cells[y][x].state = CellState::Flagged;
-            self.flags += 1;
-        } else if self.cells[y][x].state == CellState::Flagged {
-            self.cells[y][x].state = CellState::Hidden;
-            self.flags -= 1;
-        }
     }
 
     fn check_victory(&mut self) {
@@ -152,14 +115,6 @@ impl Game {
         self.victory = revealed_count == total_safe;
         if self.victory {
             self.end_time = Some(Instant::now());
-        }
-    }
-
-    fn get_elapsed_time(&self) -> u64 {
-        match (self.start_time, self.end_time) {
-            (None, _) => 0,
-            (Some(start), None) => start.elapsed().as_secs(),
-            (Some(start), Some(end)) => end.duration_since(start).as_secs(),
         }
     }
 }
@@ -200,12 +155,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         terminal.draw(|f| {
-            let size = f.size();
-            let block = Block::default()
-                .title(Span::styled(" 扫雷 ", Style::default().fg(Color::Yellow)))
-                .borders(Borders::ALL);
-            
-            f.render_widget(block, size);
+            let elapsed_time_text = format!("时间: {} 秒", game.get_elapsed_time());
+            let elapsed_paragraph = Paragraph::new(Span::styled(
+                elapsed_time_text, Style::default().fg(Color::Cyan)
+            ));
+            f.render_widget(elapsed_paragraph, f.size());
         })?;
 
         if let Event::Key(key) = event::read()? {
@@ -216,9 +170,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 KeyCode::Char(' ') => {
                     game.reveal(game.cursor_x, game.cursor_y);
-                }
-                KeyCode::Char('f') => {
-                    game.toggle_flag(game.cursor_x, game.cursor_y);
+                    if game.victory {
+                        leaderboard.update(difficulty, game.get_elapsed_time());
+                    }
                 }
                 _ => {}
             }
